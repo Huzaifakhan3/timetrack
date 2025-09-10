@@ -16,6 +16,8 @@ interface TimerType {
   name: string;
   elapsed: number;
   running: boolean;
+  startTime?: number;
+  lastUpdate?: number;
 }
 
 export default function App() {
@@ -29,30 +31,87 @@ export default function App() {
     localStorage.setItem("timers", JSON.stringify(timers));
   }, [timers]);
 
+  // Update timers based on actual time elapsed (works even when tab is inactive)
   useEffect(() => {
-    const interval = setInterval(() => {
+    const updateTimers = () => {
+      const now = Date.now();
       setTimers((prev) =>
-        prev.map((t) =>
-          t.running ? { ...t, elapsed: t.elapsed + 1 } : t
-        )
+        prev.map((timer) => {
+          if (!timer.running) return timer;
+          
+          const lastUpdate = timer.lastUpdate || now;
+          const timeDiff = Math.floor((now - lastUpdate) / 1000);
+          
+          return {
+            ...timer,
+            elapsed: timer.elapsed + timeDiff,
+            lastUpdate: now,
+          };
+        })
       );
-    }, 1000);
-    return () => clearInterval(interval);
+    };
+
+    // Update immediately and then every second
+    updateTimers();
+    const interval = setInterval(updateTimers, 1000);
+    
+    // Handle page visibility changes to ensure timers continue running
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        updateTimers();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const addTimer = () => {
     if (!newName.trim()) return;
     setTimers([
       ...timers,
-      { id: Date.now(), name: newName, elapsed: 0, running: false },
+      { 
+        id: Date.now(), 
+        name: newName, 
+        elapsed: 0, 
+        running: false,
+        startTime: undefined,
+        lastUpdate: undefined,
+      },
     ]);
     setNewName("");
   };
 
   const toggleTimer = (id: number) => {
+    const now = Date.now();
     setTimers(
-      timers.map((t) =>
-        t.id === id ? { ...t, running: !t.running } : t
+      timers.map((timer) => {
+        if (timer.id !== id) return timer;
+        
+        if (timer.running) {
+          // Stopping the timer
+          const timeDiff = Math.floor((now - (timer.lastUpdate || now)) / 1000);
+          return {
+            ...timer,
+            running: false,
+            elapsed: timer.elapsed + timeDiff,
+            startTime: undefined,
+            lastUpdate: undefined,
+          };
+        } else {
+          // Starting the timer
+          return {
+            ...timer,
+            running: true,
+            startTime: now,
+            lastUpdate: now,
+          };
+        }
+      }
       )
     );
   };
@@ -60,7 +119,13 @@ export default function App() {
   const resetTimer = (id: number) => {
     setTimers(
       timers.map((t) =>
-        t.id === id ? { ...t, elapsed: 0, running: false } : t
+        t.id === id ? { 
+          ...t, 
+          elapsed: 0, 
+          running: false,
+          startTime: undefined,
+          lastUpdate: undefined,
+        } : t
       )
     );
   };
@@ -81,7 +146,9 @@ export default function App() {
   };
 
   const data = timers.map((t) => ({ name: t.name, value: t.elapsed }));
-  const total = data.reduce((a, b) => a + b.value, 0);
+  
+  // Calculate total time as the maximum time of any single timer (not sum)
+  const total = timers.length > 0 ? Math.max(...timers.map(t => t.elapsed)) : 0;
   const activeTimers = timers.filter(t => t.running).length;
 
   return (
@@ -146,7 +213,7 @@ export default function App() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-purple-100 text-sm font-medium">Total Time</p>
+                  <p className="text-purple-100 text-sm font-medium">Longest Session</p>
                   <p className="text-2xl font-bold">{formatTime(total)}</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-purple-200" />
@@ -351,7 +418,10 @@ export default function App() {
                             ))}
                           </Pie>
                           <Tooltip 
-                            formatter={(value: number) => [formatTime(value), 'Time']}
+                            formatter={(value: number, name: string) => [
+                              `${name}: ${formatTime(value)}`, 
+                              'Duration'
+                            ]}
                             contentStyle={{
                               backgroundColor: 'rgba(255, 255, 255, 0.95)',
                               border: 'none',
