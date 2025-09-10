@@ -16,8 +16,6 @@ interface TimerType {
   name: string;
   elapsed: number;
   running: boolean;
-  startTime: number;
-  pausedTime: number;
 }
 
 export default function App() {
@@ -29,42 +27,23 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("timers", JSON.stringify(timers));
-  }, []);
+  }, [timers]);
 
-  // High-precision timer updates using requestAnimationFrame
+  // Timer updates every second
   useEffect(() => {
-    let animationId: number;
-    
-    const updateDisplay = () => {
-      setTimers(prevTimers => 
-        prevTimers.map(timer => {
-          if (!timer.running) return timer;
-          
-          const now = Date.now();
-          const currentElapsed = Math.floor((now - timer.startTime) / 1000) + timer.pausedTime;
-          
-          return {
-            ...timer,
-            elapsed: currentElapsed
-          };
-        })
+    const interval = setInterval(() => {
+      setTimers(prevTimers =>
+        prevTimers.map(timer =>
+          timer.running ? { ...timer, elapsed: timer.elapsed + 1 } : timer
+        )
       );
-      
-      animationId = requestAnimationFrame(updateDisplay);
-    };
-    
-    animationId = requestAnimationFrame(updateDisplay);
-    
-    return () => {
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
-    };
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const addTimer = () => {
     if (!newName.trim()) return;
-    const now = Date.now();
     setTimers([
       ...timers,
       { 
@@ -72,52 +51,27 @@ export default function App() {
         name: newName, 
         elapsed: 0, 
         running: false,
-        startTime: now,
-        pausedTime: 0,
       },
     ]);
     setNewName("");
   };
 
   const toggleTimer = (id: number) => {
-    const now = Date.now();
     setTimers(
       timers.map(timer => {
         if (timer.id !== id) return timer;
-        
-        if (timer.running) {
-          // Pausing: save current elapsed time
-          const currentElapsed = Math.floor((now - timer.startTime) / 1000) + timer.pausedTime;
-          return {
-            ...timer,
-            running: false,
-            elapsed: currentElapsed,
-            pausedTime: currentElapsed,
-            startTime: now, // Reset for next start
-          };
-        } else {
-          // Starting: set new start time, keep paused time
-          return {
-            ...timer,
-            running: true,
-            startTime: now,
-            // pausedTime stays the same
-          };
-        }
+        return { ...timer, running: !timer.running };
       })
     );
   };
 
   const resetTimer = (id: number) => {
-    const now = Date.now();
     setTimers(
       timers.map((t) =>
         t.id === id ? { 
           ...t, 
           elapsed: 0, 
           running: false,
-          startTime: now,
-          pausedTime: 0,
         } : t
       )
     );
