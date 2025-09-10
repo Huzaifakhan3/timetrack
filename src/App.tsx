@@ -16,8 +16,8 @@ interface TimerType {
   name: string;
   elapsed: number;
   running: boolean;
-  startTime?: number;
-  lastUpdate?: number;
+  startTime: number;
+  pausedTime: number;
 }
 
 export default function App() {
@@ -29,49 +29,42 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("timers", JSON.stringify(timers));
-  }, [timers]);
+  }, []);
 
-  // Update timers based on actual time elapsed (works even when tab is inactive)
+  // High-precision timer updates using requestAnimationFrame
   useEffect(() => {
-    const updateTimers = () => {
-      const now = Date.now();
-      setTimers((prev) =>
-        prev.map((timer) => {
+    let animationId: number;
+    
+    const updateDisplay = () => {
+      setTimers(prevTimers => 
+        prevTimers.map(timer => {
           if (!timer.running) return timer;
           
-          const lastUpdate = timer.lastUpdate || now;
-          const timeDiff = Math.floor((now - lastUpdate) / 1000);
+          const now = Date.now();
+          const currentElapsed = Math.floor((now - timer.startTime) / 1000) + timer.pausedTime;
           
           return {
             ...timer,
-            elapsed: timer.elapsed + timeDiff,
-            lastUpdate: now,
+            elapsed: currentElapsed
           };
         })
       );
-    };
-
-    // Update immediately and then every second
-    updateTimers();
-    const interval = setInterval(updateTimers, 1000);
-    
-    // Handle page visibility changes to ensure timers continue running
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        updateTimers();
-      }
+      
+      animationId = requestAnimationFrame(updateDisplay);
     };
     
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    animationId = requestAnimationFrame(updateDisplay);
     
     return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
     };
   }, []);
 
   const addTimer = () => {
     if (!newName.trim()) return;
+    const now = Date.now();
     setTimers([
       ...timers,
       { 
@@ -79,8 +72,8 @@ export default function App() {
         name: newName, 
         elapsed: 0, 
         running: false,
-        startTime: undefined,
-        lastUpdate: undefined,
+        startTime: now,
+        pausedTime: 0,
       },
     ]);
     setNewName("");
@@ -89,42 +82,42 @@ export default function App() {
   const toggleTimer = (id: number) => {
     const now = Date.now();
     setTimers(
-      timers.map((timer) => {
+      timers.map(timer => {
         if (timer.id !== id) return timer;
         
         if (timer.running) {
-          // Stopping the timer
-          const timeDiff = Math.floor((now - (timer.lastUpdate || now)) / 1000);
+          // Pausing: save current elapsed time
+          const currentElapsed = Math.floor((now - timer.startTime) / 1000) + timer.pausedTime;
           return {
             ...timer,
             running: false,
-            elapsed: timer.elapsed + timeDiff,
-            startTime: undefined,
-            lastUpdate: undefined,
+            elapsed: currentElapsed,
+            pausedTime: currentElapsed,
+            startTime: now, // Reset for next start
           };
         } else {
-          // Starting the timer
+          // Starting: set new start time, keep paused time
           return {
             ...timer,
             running: true,
             startTime: now,
-            lastUpdate: now,
+            // pausedTime stays the same
           };
         }
-      }
-      )
+      })
     );
   };
 
   const resetTimer = (id: number) => {
+    const now = Date.now();
     setTimers(
       timers.map((t) =>
         t.id === id ? { 
           ...t, 
           elapsed: 0, 
           running: false,
-          startTime: undefined,
-          lastUpdate: undefined,
+          startTime: now,
+          pausedTime: 0,
         } : t
       )
     );
@@ -147,7 +140,7 @@ export default function App() {
 
   const data = timers.map((t) => ({ name: t.name, value: t.elapsed }));
   
-  // Calculate total time as the maximum time of any single timer (not sum)
+  // Calculate longest session time
   const total = timers.length > 0 ? Math.max(...timers.map(t => t.elapsed)) : 0;
   const activeTimers = timers.filter(t => t.running).length;
 
